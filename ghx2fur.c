@@ -290,7 +290,7 @@ static unsigned char noiseTable[256]={
 };
 
 
-uint8_t wav_vol[8] = {15,15,15,15,8,8,4,4};
+uint8_t wav_vol[8] = {15,8,8,8/*?*/,8,8,4,4};
 uint8_t wav_vol2[4] = {15,8,4,0};
 
 void song2xm(int songNum, long info[4]) {
