@@ -93,6 +93,7 @@ GHX_noise = [
 def song2fur(info,pat_rows,sub_song,ins_pos):
     ins = 0
     break_later = False
+    vib_ins = []
     while True:
         if break_later: break
         pointer = rom_data[(ins_pos&0x3fff)+(ins<<1)]
@@ -103,6 +104,14 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
         pointer_end &= 0x3fff
         if not (pointer_end > pointer and (pointer_end-pointer) < 128 and (pointer_end-pointer) > 0):
             break_later = True
+        ins_data = rom_data[pointer:pointer+8]
+        if ins_data[1] & 0x80 == 0x80:
+            print(ins,bin(ins_data[4]))
+            hi = (ins_data[4]>>4&0xf)>>1
+            lo = int((ins_data[4]&0xf)/1.5)
+            vib_ins.append(hi|lo<<4)
+        else:
+            vib_ins.append(0)
         ins += 1
 
     ins_amt = ins
@@ -195,7 +204,7 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
         for j in range(info[0]): 
             write8(j)
 
-    for i in range(4): write8(1)
+    for i in range(4): write8(2)
 
     for i in range(4): write8(3)
     for i in range(4): write8(0)
@@ -383,8 +392,11 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
                 pat_buffer[2] = (command[1]&0x3f)-1
                 if curChan == 2: pat_buffer[3] = wav_vol[command[1]>>6]
                 else: pat_buffer[3] = do_vol(command[1]>>6)
-                pat_buffer[6] = 0x01
-                pat_buffer[7] = 0x00
+                pat_buffer[4] = 0x04
+                if (command[1]&0x3f) == 0:
+                    pat_buffer[5] = 0
+                else:
+                    pat_buffer[5] = vib_ins[(command[1]&0x3f)-1]
 
                 if (command[1]&0x3f) != 0: ins_use[curChan].append(max((command[1]&0x3f)-1,0))
                 channel_pos[curChan] += 2
@@ -413,6 +425,12 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
                 if (command[1]&0x3f) != 0: ins_use[curChan].append(max((command[1]&0x3f)-1,0))
                 if curChan == 2: pat_buffer[3] = wav_vol[command[1]>>6&3]
                 else: pat_buffer[3] = do_vol(command[1]>>6)
+
+                pat_buffer[4] = 0x04
+                if (command[1]&0x3f) == 0:
+                    pat_buffer[5] = 0
+                else:
+                    pat_buffer[5] = vib_ins[(command[1]&0x3f)-1]
                 channel_pos[curChan] += 2
                 patSize += 3
 
@@ -429,14 +447,19 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
                 pat_buffer[2] = (command[1]&0x3f)-1
                 if curChan == 2: pat_buffer[3] = wav_vol[command[1]>>6&3]
                 else: pat_buffer[3] = do_vol(command[1]>>6)
-                pat_buffer[4] = 0x0F
-                pat_buffer[5] = lowNibble
+                pat_buffer[4] = 0x04
+                if (command[1]&0x3f) == 0:
+                    pat_buffer[5] = 0
+                else:
+                    pat_buffer[5] = vib_ins[(command[1]&0x3f)-1]
+                pat_buffer[6] = 0x0F
+                pat_buffer[7] = lowNibble
                 if (command[1]&0x3f) != 0: ins_use[curChan].append(max((command[1]&0x3f)-1,0))
 
                 channel_pos[curChan] += 3
                 patSize += 5
 
-            for byt in range(6): 
+            for byt in range(8): 
                 write16(pat_buffer[byt])    
 
         write8(0)
@@ -527,7 +550,6 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
                         #pitch = GHX_noise[((j&0x3f)-1)>>1]
                         if ins in ins_use[3]:
                             pitch = GHX_noise[((j&0x3f)-2)>>1]
-                            print(hex(pitch))
                             ind = min(FUR_noise, key=lambda x:abs((x&7)-(pitch&7))+abs(((x>>4)&15)-((pitch>>4)&15)))
                             cur[1] = (FUR_noise.index(ind)-22)|(1<<30)  
                             cur[2] = ((pitch&8)>>3)
