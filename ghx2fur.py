@@ -49,18 +49,14 @@ def write32(w):
 
 def conv_int8(n):
     if n >= 0x80:
-        return 0x100-n
+        return n-0x100
     else:
         return n
 
 def do_vol(v):
-    if v > 0:
-        return int(min(max(0x10/v,0),15))
-    else:
-        return 0x0f
+    return [0xf,0x8,0x4,0x2][v]
 
-wav_vol = [15,8,8,8,8,8,4,4]
-wav_vol2 = [15,8,4,0]
+wav_vol = [15,8,4,8]
 
 FUR_noise = [
   0,
@@ -360,35 +356,18 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
 
 
                 if curChan != 2:
-                    if lowNibble == 12:
-                        lowNibble = 0
-                    elif lowNibble == 8:
-                        lowNibble = 32
-                    elif lowNibble == 4:
-                        lowNibble = 48
-                    elif lowNibble == 0:
-                        lowNibble = 64
+                    if lowNibble == 0xf:
+                        pat_buffer[0] = 100
+                        pat_buffer[1] = 0
+                    else:
+                        pat_buffer[3] = 0x0f-lowNibble
                 else:
-                    if lowNibble == 8:
-                        lowNibble = 50
-                    if lowNibble == 4:
-                        lowNibble = 64
-                    elif lowNibble == 3:
-                        lowNibble = 48
-                    elif lowNibble == 2:
-                        lowNibble = 32
-                    elif lowNibble == 1:
-                        lowNibble = 16
-                    elif lowNibble == 0:
-                        lowNibble = 0
+                    if [15,8,4,0][(0x0f-lowNibble)>>2] == 0:
+                        pat_buffer[0] = 100
+                        pat_buffer[1] = 0
+                    else:
+                        pat_buffer[3] = [15,8,4,0][(0x0f-lowNibble)>>2]
 
-
-                if lowNibble == 0:
-                    pat_buffer[0] = 100
-                    pat_buffer[1] = 0
-                else:
-                    if curChan == 2: pat_buffer[3] = wav_vol2[lowNibble>>5&3]
-                    else: pat_buffer[3] = lowNibble>>4
 
                 channel_pos[curChan] += 2
                 patSize += 3
@@ -402,12 +381,12 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
                 pat_buffer[0] = (curNote%12)+1
                 pat_buffer[1] = (curNote-(curNote%12))/12
                 pat_buffer[2] = (command[1]&0x3f)-1
-                if curChan == 2: pat_buffer[3] = wav_vol[command[1]>>5]
-                else: pat_buffer[3] = do_vol(command[1]>>5)
+                if curChan == 2: pat_buffer[3] = wav_vol[command[1]>>6]
+                else: pat_buffer[3] = do_vol(command[1]>>6)
                 pat_buffer[6] = 0x01
                 pat_buffer[7] = 0x00
 
-                ins_use[curChan].append(max((command[1]&0x3f)-1,0))
+                if (command[1]&0x3f) != 0: ins_use[curChan].append(max((command[1]&0x3f)-1,0))
                 channel_pos[curChan] += 2
                 patSize += 3
 
@@ -431,9 +410,9 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
                 pat_buffer[0] = (curNote%12)+1
                 pat_buffer[1] = (curNote-(curNote%12))/12
                 pat_buffer[2] = (command[1]&0x3f)-1
-                ins_use[curChan].append(max((command[1]&0x3f)-1,0))
-                if curChan == 2: pat_buffer[3] = wav_vol2[command[1]>>5&3]
-                else: pat_buffer[3] = do_vol(command[1]>>5)
+                if (command[1]&0x3f) != 0: ins_use[curChan].append(max((command[1]&0x3f)-1,0))
+                if curChan == 2: pat_buffer[3] = wav_vol[command[1]>>6&3]
+                else: pat_buffer[3] = do_vol(command[1]>>6)
                 channel_pos[curChan] += 2
                 patSize += 3
 
@@ -448,11 +427,11 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
                 pat_buffer[0] = (curNote%12)+1
                 pat_buffer[1] = (curNote-(curNote%12))/12
                 pat_buffer[2] = (command[1]&0x3f)-1
-                if curChan == 2: pat_buffer[3] = wav_vol2[command[1]>>5&3]
-                else: pat_buffer[3] = do_vol(command[1]>>5)
+                if curChan == 2: pat_buffer[3] = wav_vol[command[1]>>6&3]
+                else: pat_buffer[3] = do_vol(command[1]>>6)
                 pat_buffer[4] = 0x0F
                 pat_buffer[5] = lowNibble
-                ins_use[curChan].append(max((command[1]&0x3f)-1,0))
+                if (command[1]&0x3f) != 0: ins_use[curChan].append(max((command[1]&0x3f)-1,0))
 
                 channel_pos[curChan] += 3
                 patSize += 5
@@ -479,7 +458,6 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
         f.seek(pointer_pos+(i*4))
         write32(s)
         f.seek(0,2)
-
 
     for ins in range(ins_amt):
         pointer = rom_data[(ins_pos&0x3fff)+(ins<<1)]
@@ -687,6 +665,7 @@ for i in range(bank_size-len(magic_bytes)):
         if header_offset != -1:
             found_magic = True
             num_songs = rom_data[header_offset + 3]
+            if num_songs == 0: num_songs = 1
             pat_len = rom_data[header_offset + 4]
             pat_table = rom_data[header_offset + 6]|(rom_data[header_offset + 7]<<8)
             ins_table = rom_data[header_offset + 8]|(rom_data[header_offset + 9]<<8)
