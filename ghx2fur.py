@@ -525,7 +525,7 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
 
             cur = [ins_data[2]>>4,0,0]
             if ins in ins_use[2]:
-                cur[0] = ins_data[2]>>5&3
+                cur[0] = [0,3,2,1][ins_data[2]>>5&3]
 
             frame = 1
             #speed = 1 if ins_data[1] & 0x80 else ins_data[1]&7
@@ -600,7 +600,7 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
                     arp.append(cur[1])
                     duty.append(cur[2])
                     if ins in ins_use[2]:
-                        vol.append([0,15,8,4][int(cur[0])])
+                        vol.append([0,4,8,15][int(cur[0])])
                     else: 
                         vol.append(int(cur[0]))
                         if (ins_data[2]&0x7) != 0:
@@ -614,7 +614,7 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
 
         for i in range(64):
             if ins in ins_use[2]:
-                vol.append([0,15,8,4][int(cur[0])])
+                vol.append([0,4,8,15][int(cur[0])])
             else: 
                 vol.append(int(cur[0]))
                 if (ins_data[2]&0x7) != 0:
