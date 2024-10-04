@@ -506,8 +506,15 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
         wav = []
         if ins in ins_use[2]:
             ins_data2 = ins_data2[11:]
-            update_rate = wav_header[8]
-            for j in range(1 if update_rate == 0 else 16-wav_header[2]):
+            update_rate = max(wav_header[8]-1,0)
+            sweep_loop = wav_header[6]
+            if update_rate == 0:
+                sweep_len = 1
+            elif sweep_loop > 0:
+                sweep_len = sweep_loop-wav_header[2]
+            else:
+                sweep_len = 16-wav_header[2]
+            for j in range(sweep_len):
                 start_wav = (wav_pointer&0x3fff)+(j*conv_int8(wav_header[0]))
                 current_wav = rom_data[start_wav:start_wav+16]
                 if current_wav in all_wavs:
@@ -524,8 +531,8 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
                     wav_last_len += 1
                     all_wavs.append(current_wav)
                     f.write(bytearray(temp))
-            if wav_header[6] & 0x10:
-                for j in range(1 if update_rate == 0 else 16-wav_header[2],0,-1):
+            if sweep_loop > 0 and update_rate > 0:
+                for j in range(sweep_len,-1,-1):
                     start_wav = (wav_pointer&0x3fff)+(j*conv_int8(wav_header[0]))
                     current_wav = rom_data[start_wav:start_wav+16]
                     if current_wav in all_wavs:
