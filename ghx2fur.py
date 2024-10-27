@@ -15,6 +15,7 @@ gb = open(sys.argv[1],"rb")
 bank = int(sys.argv[2])
 gb.seek(bank*bank_size)
 rom_data = list(gb.read(bank_size))
+rom_data += [0]*(bank_size-len(rom_data))
 gb.close()
 
 seq_list = []
@@ -23,13 +24,10 @@ def get_seq_list(pat_table):
     cnt = 0
     offset = pat_table%bank_size
     arr = []
-    for i in range(512):
+    for i in range(256):
         val = rom_data[offset]|(rom_data[offset + 1]<<8)
-        if val >= bank_size and val < bank_size*2:
-            arr.append(val%bank_size)
-            offset += 2
-        else:
-            return arr
+        arr.append(val%bank_size)
+        offset += 2
     return arr
 
 f = 0
@@ -56,7 +54,7 @@ def conv_int8(n):
 def do_vol(v):
     return [0xf,0x8,0x4,0x2][v]
 
-wav_vol = [15,8,4,8]
+wav_vol = [15,4,8,15]
 
 FUR_noise = [
   0,
@@ -90,6 +88,31 @@ GHX_noise = [
 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00,
 ]
 
+vibrato_table = [
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+  0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x01, 0x01,
+  0x02, 0x01, 0x01, 0x00, 0x00, 0xff, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xff,
+  0x00, 0x01, 0x02, 0x02, 0x03, 0x02, 0x02, 0x01, 0x00, 0xfe, 0xfd, 0xfd,
+  0xfd, 0xfd, 0xfd, 0xfe, 0x00, 0x01, 0x02, 0x03, 0x04, 0x03, 0x02, 0x01,
+  0x00, 0xfe, 0xfd, 0xfc, 0xfc, 0xfc, 0xfd, 0xfe, 0x00, 0x01, 0x03, 0x04,
+  0x05, 0x04, 0x03, 0x01, 0x00, 0xfe, 0xfc, 0xfb, 0xfb, 0xfb, 0xfc, 0xfe,
+  0x00, 0x02, 0x04, 0x05, 0x06, 0x05, 0x04, 0x02, 0x00, 0xfd, 0xfb, 0xfa,
+  0xfa, 0xfa, 0xfb, 0xfd, 0x00, 0x02, 0x04, 0x06, 0x07, 0x06, 0x04, 0x02,
+  0x00, 0xfd, 0xfb, 0xf9, 0xf9, 0xf9, 0xfb, 0xfd, 0x00, 0x03, 0x05, 0x07,
+  0x08, 0x07, 0x05, 0x03, 0x00, 0xfc, 0xfa, 0xf8, 0xf8, 0xf8, 0xfa, 0xfc,
+  0x00, 0x03, 0x06, 0x08, 0x09, 0x08, 0x06, 0x03, 0x00, 0xfc, 0xf9, 0xf7,
+  0xf7, 0xf7, 0xf9, 0xfc, 0x00, 0x03, 0x07, 0x09, 0x0a, 0x09, 0x07, 0x03,
+  0x00, 0xfc, 0xf8, 0xf6, 0xf6, 0xf6, 0xf8, 0xfc, 0x00, 0x04, 0x07, 0x0a,
+  0x0b, 0x0a, 0x07, 0x04, 0x00, 0xfb, 0xf8, 0xf5, 0xf5, 0xf5, 0xf8, 0xfb,
+  0x00, 0x04, 0x08, 0x0b, 0x0c, 0x0b, 0x08, 0x04, 0x00, 0xfb, 0xf7, 0xf4,
+  0xf4, 0xf4, 0xf7, 0xfb, 0x00, 0x04, 0x09, 0x0c, 0x0d, 0x0c, 0x09, 0x04,
+  0x00, 0xfb, 0xf6, 0xf3, 0xf3, 0xf3, 0xf6, 0xfb, 0x00, 0x05, 0x09, 0x0c,
+  0x0e, 0x0c, 0x09, 0x05, 0x00, 0xfa, 0xf6, 0xf3, 0xf2, 0xf3, 0xf6, 0xfa,
+  0x00, 0x05, 0x0a, 0x0d, 0x0f, 0x0d, 0x0a, 0x05, 0x00, 0xfa, 0xf5, 0xf2,
+  0xf1, 0xf2, 0xf5, 0xfa
+]
+
 def song2fur(info,pat_rows,sub_song,ins_pos):
     ins = 0
     break_later = False
@@ -105,7 +128,7 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
         if not (pointer_end > pointer and (pointer_end-pointer) < 128 and (pointer_end-pointer) > 0):
             break_later = True
         ins_data = rom_data[pointer:pointer+8]
-        if ins_data[1] & 0x80 == 0x80:
+        if ins_data[0] & 0x20 == 0x20:
             print(ins,bin(ins_data[4]))
             hi = (ins_data[4]>>4&0xf)>>1
             lo = int((ins_data[4]&0xf)/1.5)
@@ -282,6 +305,8 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
         0x00, 0x00, 0x00, 0x0F, 0x00, 0x00, 0x00
     ]
 
+    has_played = [False]*4
+
     wav_len = 0
     romPos = info[1] % bank_size
     for i in range(4*info[0]): 
@@ -363,19 +388,18 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
                 lowNibble = (command[1] >> 4)
                 highNibble = (command[1] & 15)
 
-
                 if curChan != 2:
-                    if lowNibble == 0xf:
+                    if (lowNibble>>2) == 0x3:
                         pat_buffer[0] = 100
                         pat_buffer[1] = 0
                     else:
-                        pat_buffer[3] = 0x0f-lowNibble
+                        pat_buffer[3] = do_vol(lowNibble>>2)
                 else:
-                    if [15,8,4,0][(0x0f-lowNibble)>>2] == 0:
+                    if [0,4,8,15][lowNibble>>2] == 0:
                         pat_buffer[0] = 100
                         pat_buffer[1] = 0
                     else:
-                        pat_buffer[3] = [15,8,4,0][(0x0f-lowNibble)>>2]
+                        pat_buffer[3] = [0,4,8,15][lowNibble>>2]
 
 
                 channel_pos[curChan] += 2
@@ -392,13 +416,13 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
                 pat_buffer[2] = (command[1]&0x3f)-1
                 if curChan == 2: pat_buffer[3] = wav_vol[command[1]>>6]
                 else: pat_buffer[3] = do_vol(command[1]>>6)
-                pat_buffer[4] = 0x04
-                if (command[1]&0x3f) == 0:
-                    pat_buffer[5] = 0
-                else:
-                    pat_buffer[5] = vib_ins[(command[1]&0x3f)-1]
 
-                if (command[1]&0x3f) != 0: ins_use[curChan].append(max((command[1]&0x3f)-1,0))
+                if (command[1]&0x3f) != 0:
+                    ins_use[curChan].append(max((command[1]&0x3f)-1,0))
+                    has_played[curChan] = True
+                elif has_played[curChan]:
+                    pat_buffer[4] = 0x03
+                    pat_buffer[5] = 0xFF
                 channel_pos[curChan] += 2
                 patSize += 3
 
@@ -408,8 +432,8 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
                 highNibble = (command[1] & 15)
 
 
-                pat_buffer[4] = 0x0F
-                pat_buffer[5] = lowNibble
+                pat_buffer[6] = 0x0F
+                pat_buffer[7] = lowNibble
                 channel_pos[curChan] += 2
                 patSize += 3
                     
@@ -422,15 +446,16 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
                 pat_buffer[0] = (curNote%12)+1
                 pat_buffer[1] = (curNote-(curNote%12))/12
                 pat_buffer[2] = (command[1]&0x3f)-1
-                if (command[1]&0x3f) != 0: ins_use[curChan].append(max((command[1]&0x3f)-1,0))
+                if (command[1]&0x3f) != 0:
+                    ins_use[curChan].append(max((command[1]&0x3f)-1,0))
+                    has_played[curChan] = True
+                elif has_played[curChan]:
+                    pat_buffer[4] = 0x03
+                    pat_buffer[5] = 0xFF
+
                 if curChan == 2: pat_buffer[3] = wav_vol[command[1]>>6&3]
                 else: pat_buffer[3] = do_vol(command[1]>>6)
 
-                pat_buffer[4] = 0x04
-                if (command[1]&0x3f) == 0:
-                    pat_buffer[5] = 0
-                else:
-                    pat_buffer[5] = vib_ins[(command[1]&0x3f)-1]
                 channel_pos[curChan] += 2
                 patSize += 3
 
@@ -447,14 +472,15 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
                 pat_buffer[2] = (command[1]&0x3f)-1
                 if curChan == 2: pat_buffer[3] = wav_vol[command[1]>>6&3]
                 else: pat_buffer[3] = do_vol(command[1]>>6)
-                pat_buffer[4] = 0x04
-                if (command[1]&0x3f) == 0:
-                    pat_buffer[5] = 0
-                else:
-                    pat_buffer[5] = vib_ins[(command[1]&0x3f)-1]
+
                 pat_buffer[6] = 0x0F
                 pat_buffer[7] = lowNibble
-                if (command[1]&0x3f) != 0: ins_use[curChan].append(max((command[1]&0x3f)-1,0))
+                if (command[1]&0x3f) != 0:
+                    ins_use[curChan].append(max((command[1]&0x3f)-1,0))
+                    has_played[curChan] = True
+                elif has_played[curChan]:
+                    pat_buffer[4] = 0x03
+                    pat_buffer[5] = 0xFF
 
                 channel_pos[curChan] += 3
                 patSize += 5
@@ -512,9 +538,10 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
             if update_rate == 0:
                 sweep_len = 1
             elif sweep_loop > 0:
-                sweep_len = sweep_loop-wav_header[2]
+                sweep_len = (sweep_loop-wav_header[2])//(max(abs(conv_int8(wav_header[0])),1))+1
             else:
                 sweep_len = 16-wav_header[2]
+
             for j in range(sweep_len):
                 start_wav = (wav_pointer&0x3fff)+(j*conv_int8(wav_header[0]))
                 current_wav = rom_data[start_wav:start_wav+16]
@@ -532,9 +559,10 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
                     wav_last_len += 1
                     all_wavs.append(current_wav)
                     f.write(bytearray(temp))
-            if sweep_loop > 0 and update_rate > 0:
+            if update_rate > 0: #sweep_loop > 0 and update_rate > 0:
                 wav_loop_start = len(wav)
-                for j in range(sweep_len-1,wav_header[4],-1):
+                sweep_end = (wav_header[4]-wav_header[2])//(max(abs(conv_int8(wav_header[0])),1))+1
+                for j in range(sweep_len,sweep_end,-1):
                     start_wav = (wav_pointer&0x3fff)+(j*conv_int8(wav_header[0]))
                     current_wav = rom_data[start_wav:start_wav+16]
                     if current_wav in all_wavs:
@@ -551,7 +579,7 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
                         wav_last_len += 1
                         all_wavs.append(current_wav)
                         f.write(bytearray(temp))
-                for j in range(wav_header[4],sweep_len-1):
+                for j in range(sweep_end,sweep_len):
                     start_wav = (wav_pointer&0x3fff)+(j*conv_int8(wav_header[0]))
                     current_wav = rom_data[start_wav:start_wav+16]
                     if current_wav in all_wavs:
@@ -661,8 +689,11 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
                     else: 
                         vol.append(int(cur[0]))
                         if (ins_data[2]&0x7) != 0:
-                            cur[0] -= 64/60/(ins_data[2]&0x7)
-                        cur[0] = max(cur[0],0)
+                            if (ins_data[2]>>3)&1:
+                                cur[0] += 64/60/(ins_data[2]&0x7)
+                            else:
+                                cur[0] -= 64/60/(ins_data[2]&0x7)
+                        cur[0] = max(min(cur[0],15),0)
 
                 print("---")
 
@@ -675,11 +706,30 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
             else: 
                 vol.append(int(cur[0]))
                 if (ins_data[2]&0x7) != 0:
-                    cur[0] -= 64/60/(ins_data[2]&0x7)
-                cur[0] = max(cur[0],0)
+                    if (ins_data[2]>>3)&1:
+                        cur[0] += 64/60/(ins_data[2]&0x7)
+                    else:
+                        cur[0] -= 64/60/(ins_data[2]&0x7)
+                    cur[0] = max(min(cur[0],15),0)
+
         vol = vol[:min(255,len(vol))]
         arp = arp[:min(255,len(arp))]
         duty = duty[:min(255,len(duty))]
+
+
+        
+        pitch = []
+
+        if ins_data[1] & 0x80 == 0x80 or ins_data[0] & 0x20 == 0x20:
+            pitch += [0]*ins_data[3]
+            vib_pos = 0
+            while len(pitch) < 256:
+                vib_pos += ins_data[4]&0xf
+                vib_pos &= 0x3f
+                pitch.append(vibrato_table[(vib_pos>>2&0xf)|(ins_data[4]&0xf0)])
+                if (vib_pos>>2) == 0: break
+
+        pitch = pitch[:min(255,len(pitch))]
 
         loop = max(loop,0)
 
@@ -705,7 +755,7 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
 
         insfile.extend([1,len(arp)])
         insfile.extend([loop,0xFF]) # first element is macro loop
-        insfile.extend([0,3<<6,0,1])
+        insfile.extend([0,(3<<6)|1,0,1])
         for i in arp:
             insfile.extend([i&0xff,i>>8&0xff,i>>16&0xff,i>>24&0xff])
 
@@ -715,8 +765,14 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
         insfile.extend(bytearray(duty))
 
         if ins in ins_use[2]: 
-            insfile.extend([3,len(wav),wav_loop_start,0xFF,0,1,0,max(update_rate,1)])
+            insfile.extend([3,len(wav),wav_loop_start,0xFF,0,1,0,max(update_rate+1,1)])
             insfile.extend(wav)
+
+        if len(pitch) != 0:
+            insfile.extend([4,len(pitch)])
+            insfile.extend([ins_data[3],0xFF]) # first element is macro loop
+            insfile.extend([0,(1<<6)|1,0,1])
+            insfile.extend(bytearray(pitch))
 
         insfile.extend([0xFF])
 
