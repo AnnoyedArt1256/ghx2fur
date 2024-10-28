@@ -800,11 +800,13 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
             insfile.extend([0,(1<<6)|1,0,1])
             insfile.extend(bytearray(pitch))
 
+        """
         if ins in ins_use[3]:
             insfile.extend([14,1])
             insfile.extend([0,0xFF]) # first element is macro loop
             insfile.extend([0,1,0,1])
             insfile.append(1)
+        """
 
         insfile.extend([0xFF])
 
