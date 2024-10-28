@@ -113,6 +113,11 @@ vibrato_table = [
   0xf1, 0xf2, 0xf5, 0xfa
 ]
 
+def NR43toHz(NR43):
+    divider = float(NR43&7)
+    if divider == 0: divider = 0.5
+    return 262144.0/(divider*(2**float(NR43>>4&15)))
+
 def song2fur(info,pat_rows,sub_song,ins_pos):
     ins = 0
     break_later = False
@@ -183,7 +188,7 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
     write32(0x42700000)
 
     write16(pat_rows)
-    write16(info[0])
+    write16(info[0]+info[2])
 
     write8(4)
     write8(16)
@@ -192,7 +197,7 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
     write16(wav_amt)
     write16(0)
 
-    write32(4*info[0])
+    write32(4*(info[0]+info[2]))
 
     write8(0x04)
     for i in range(31): write8(0)
@@ -221,10 +226,10 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
     for i in range(4*wav_amt): write8(0)
 
     pattern_pos = f.tell()
-    for i in range(4*info[0]*4): write8(0)
+    for i in range(4*(info[0]+info[2])*4): write8(0)
 
     for i in range(4): 
-        for j in range(info[0]): 
+        for j in range((info[0]+info[2])): 
             write8(j)
 
     for i in range(4): write8(2)
@@ -307,9 +312,14 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
 
     has_played = [False]*4
 
+    stopped_temp = False
+    stopped = False
     wav_len = 0
     romPos = info[1] % bank_size
-    for i in range(4*info[0]): 
+    for i in range(4*(info[0]+info[2])): 
+        if i == info[0]*4:
+            romPos = info[3] % bank_size
+
         fprintf(f, "PATR")
         s = f.tell()
         write32(0)
@@ -321,6 +331,7 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
         write16(0)
 
         if (i&3) == 0:
+            stopped = stopped_temp
             if trFix == 0:
                 for index in range(7):
                     pattern[index] = rom_data[romPos + index]
@@ -364,6 +375,10 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
         for rowsLeft in range(pat_rows):
             curChan = i&3
             pat_buffer = [0x0000,0x0000,0xFFFF,0xFFFF,0xFFFF,0xFFFF,0xFFFF,0xFFFF]
+            if stopped:
+                for byt in range(8): 
+                    write16(pat_buffer[byt])   
+                continue
             command[0] = rom_data[channel_pos[curChan]]
             command[1] = rom_data[channel_pos[curChan] + 1]
             command[2] = rom_data[channel_pos[curChan] + 2]
@@ -434,6 +449,7 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
 
                 pat_buffer[6] = 0x0F
                 pat_buffer[7] = lowNibble
+                if lowNibble == 0: stopped_temp = True
                 channel_pos[curChan] += 2
                 patSize += 3
                     
@@ -475,6 +491,7 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
 
                 pat_buffer[6] = 0x0F
                 pat_buffer[7] = lowNibble
+                if lowNibble == 0: stopped_temp = True
                 if (command[1]&0x3f) != 0:
                     ins_use[curChan].append(max((command[1]&0x3f)-1,0))
                     has_played[curChan] = True
@@ -523,7 +540,7 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
 
         if ins_data[1] & 0x80 == 0x80:
             ins_data2 = ins_data2[2:]
-        elif ins_data[0] & 0x20 == 0x20:
+        elif ins_data[0] & 0x20 == 0x20 and not (ins in ins_use[3]):
             ins_data2 = ins_data2[2:]
 
         wav_header = ins_data2[3:14]
@@ -598,7 +615,9 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
                         f.write(bytearray(temp))
             print([hex(i) for i in wav_header])
         if len(wav) > 255: wav = wav[:255]
-        ins_table = ins_data2[3:(((ins_data[0]&0x1f)*3)+3)]
+        ins_len_mod = 0x20
+        if ins in ins_use[3]: ins_len_mod = 0x40
+        ins_table = ins_data2[3:(((ins_data[0]%ins_len_mod)*3)+3)]
         vol = []
         arp = []
         duty = []
@@ -614,7 +633,7 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
 
             frame = 1
             #speed = 1 if ins_data[1] & 0x80 else ins_data[1]&7
-            speed = ins_data[1]&7
+            speed = ins_data[1]&0x7f
             print([hex(i) for i in ins_data[:8]])
             print([hex(i) for i in ins_table])
             wait = speed
@@ -622,38 +641,45 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
                 #print(ins_table[i:i+3])
                 do_loop = False
                 j = ins_table[i]
-                if (j>>4) == 0x8:
+                if (j>>6) == 2:
                     loop = frame-(j&0xf)
                     print("Jump to",loop)
                     do_loop = True
-                elif (j>>4) == 0xC:
+                elif (j>>6) == 3:
                     cur[2] = j&3
                     print("Set duty to",j&0xf)
-                elif (j>>4) >= 0x4 and (j>>4) < 8:
+                elif (j>>6) == 1:
                     if j != 0x40:
                         print("Arpeggio abs",hex(j))
                         #pitch = GHX_noise[((j&0x3f)-1)>>1]
                         if ins in ins_use[3]:
                             pitch = GHX_noise[((j&0x3f)-2)>>1]
-                            ind = min(FUR_noise, key=lambda x:abs((x&7)-(pitch&7))+abs(((x>>4)&15)-((pitch>>4)&15)))
-                            cur[1] = (FUR_noise.index(ind)-22)|(1<<30)  
+                            #ind = min(FUR_noise, key=lambda x:abs((x&7)-(pitch&7))+abs(((x>>4)&15)-((pitch>>4)&15)))
+                            ind = min(FUR_noise, key=lambda x:abs((x&7)-(pitch&7))+abs(NR43toHz(x)-NR43toHz(pitch)))
+                            cur[1] = (FUR_noise.index(ind)-21)|(1<<30)  
                             cur[2] = ((pitch&8)>>3)
                         else:
                             cur[1] = (j&0x3f)|(1<<30)
-                elif j > 0 and j < 0x80:
+                elif j > 0:
                     print("Arpeggio",j)
-                    cur[1] = j        
+                    if ins in ins_use[3]:
+                        pitch = GHX_noise[((j&0x3f)-2)>>1]
+                        ind = min(FUR_noise, key=lambda x:abs((x&7)-(pitch&7))+abs(NR43toHz(x)-NR43toHz(pitch)))
+                        cur[1] = (FUR_noise.index(ind)-21)|(1<<30)  
+                        #cur[2] = ((pitch&8)>>3)
+                    else:
+                        cur[1] = j&0x3f
                 i += 1
 
                 j = ins_table[i]
-                if (j>>4) == 0x8:
+                if (j>>6) == 2:
                     loop = frame-(j&0xf)
                     print("Jump to",loop)
                     do_loop = True
-                elif (j>>4) == 0xC:
+                elif (j>>6) == 3:
                     cur[2] = j&3
                     print("Set duty to",j&0xf)
-                elif (j>>4) == 0x4:
+                elif (j>>6) == 1:
                     cur[0] = j&15
                     print("Set volume to",j&0xf)
                 elif j != 0:
@@ -664,14 +690,14 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
                 j = ins_table[i]
                 if j == 0:
                     print("Empty")
-                elif (j>>4) == 0x8:
+                elif (j>>6) == 0x2:
                     loop = frame-(j&0xf)
                     print("Jump to",loop)
                     do_loop = True
-                elif (j>>4) == 0xC:
+                elif (j>>6) == 0x3:
                     cur[2] = j&3
                     print("Set duty to",j&0xf)
-                elif (j>>4) == 0x4:
+                elif (j>>6) == 1:
                     cur[0] = j&15
                     print("Set volume to",j&0xf)
                 else:
@@ -685,7 +711,7 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
                     arp.append(cur[1])
                     duty.append(cur[2])
                     if ins in ins_use[2]:
-                        vol.append([0,4,8,15][int(cur[0])])
+                        vol.append([0,4,8,15][int(cur[0]&3)])
                     else: 
                         vol.append(int(cur[0]))
                         if (ins_data[2]&0x7) != 0:
@@ -702,7 +728,7 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
 
         for i in range(64):
             if ins in ins_use[2]:
-                vol.append([0,4,8,15][int(cur[0])])
+                vol.append([0,4,8,15][int(cur[0]&3)])
             else: 
                 vol.append(int(cur[0]))
                 if (ins_data[2]&0x7) != 0:
@@ -774,6 +800,12 @@ def song2fur(info,pat_rows,sub_song,ins_pos):
             insfile.extend([0,(1<<6)|1,0,1])
             insfile.extend(bytearray(pitch))
 
+        if ins in ins_use[3]:
+            insfile.extend([14,1])
+            insfile.extend([0,0xFF]) # first element is macro loop
+            insfile.extend([0,1,0,1])
+            insfile.append(1)
+
         insfile.extend([0xFF])
 
         actual_macro_length = len(insfile)-macro_length
@@ -825,7 +857,7 @@ for i in range(bank_size-len(magic_bytes)):
                 song_info = []
                 song_info.append(rom_data[rom_pos]+1)
                 song_info.append(rom_data[rom_pos + 1]|(rom_data[rom_pos + 2]<<8))
-                song_info.append(rom_data[rom_pos + 3])
+                song_info.append(rom_data[rom_pos + 3]+1)
                 song_info.append(rom_data[rom_pos + 4]|(rom_data[rom_pos + 5]<<8))
                 print("Number of patterns:",str(song_info[0]))
                 print("Song data pos: $"+hex(song_info[1])[2:])
